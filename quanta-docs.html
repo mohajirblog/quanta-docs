@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Quanta Docs — Documentary Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0d0d0d; font-family: 'Courier New', monospace; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #111; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  textarea:focus, input:focus { box-shadow: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const CATEGORIES = [
+  { id: "prehistory", emoji: "🦴", label: "Prehistory",  color: "#D2691E" },
+  { id: "science",    emoji: "🔬", label: "Science",     color: "#2196F3" },
+  { id: "philosophy", emoji: "🧠", label: "Philosophy",  color: "#9C27B0" },
+  { id: "nature",     emoji: "🌿", label: "Nature",      color: "#4CAF50" },
+  { id: "psychology", emoji: "💡", label: "Psychology",  color: "#FF9800" },
+  { id: "space",      emoji: "🌌", label: "Space",       color: "#1565C0" },
+  { id: "history",    emoji: "📜", label: "History",     color: "#795548" },
+  { id: "mystery",    emoji: "❓", label: "Mystery",     color: "#607D8B" },
+  { id: "body",       emoji: "🫀", label: "Human Body",  color: "#E91E63" },
+  { id: "animals",    emoji: "🐾", label: "Animals",     color: "#00897B" },
+  { id: "technology", emoji: "⚙️", label: "Technology",  color: "#546E7A" },
+  { id: "society",    emoji: "🏛", label: "Society",     color: "#8D6E63" },
+  { id: "weird_animals", emoji: "🦑", label: "Weird Animals", color: "#00BCD4" },
+  { id: "if_they_talk",  emoji: "🗣️", label: "If They Could Talk", color: "#E91E63" },
+  { id: "psycho_fr",     emoji: "🧡", label: "Psycho FR",          color: "#7E57C2" },
+];
+
+const STORAGE_KEY = "qdocs_v5";
+const loadSaved = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; } };
+const persistSaved = (a) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(a)); } catch {} };
+
+const SHORTS_IMAGES = 30;
+const randomCategory = () => CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)].id;
+
+// ─── IMAGE CARD ───────────────────────────────────────────────────────────────
+function ImageCard({ img, i, isShorts }) {
+  const [open, setOpen] = useState(false);
+  const isHook = i === 0;
+  return (
+    <div style={{
+      border: `1.5px solid ${isHook ? "#FFD54F" : "#2a2a2a"}`,
+      borderRadius: 8, overflow: "hidden",
+      background: isHook ? "#1a1500" : "#161616", marginBottom: 8,
+    }}>
+      <div style={{ background: isHook ? "#332800" : "#0a0a0a", padding: "5px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 11, fontWeight: 900, color: isHook ? "#FFD54F" : "#D2A679" }}>
+          {isHook ? "🎣 HOOK — IMG 01" : `IMG ${String(i + 1).padStart(2, "0")}`}
+        </span>
+        <span style={{ color: "#444", fontSize: 9 }}>{isShorts ? "9:16" : "16:9"}</span>
+      </div>
+      <div style={{ padding: "8px 10px" }}>
+        {isHook && <div style={{ fontSize: 9, color: "#FFD54F", fontWeight: 700, letterSpacing: 1, marginBottom: 4, textTransform: "uppercase" }}>⚡ Opens video — must shock immediately</div>}
+        <p style={{ margin: "0 0 6px", fontSize: 12, color: isHook ? "#ffe082" : "#ccc", lineHeight: 1.5, fontStyle: "italic" }}>
+          🎙 {img.voiceover}
+        </p>
+        <button onClick={() => setOpen(!open)} style={{ background: "none", border: "none", color: "#4FC3F7", fontSize: 10, cursor: "pointer", padding: 0, fontFamily: "monospace" }}>
+          {open ? "▲ hide prompt" : "▼ show image prompt"}
+        </button>
+        {open && (
+          <div style={{ marginTop: 6, fontSize: 10, color: "#aaa", background: "#0f0f0f", padding: 8, borderRadius: 6, lineHeight: 1.6, borderLeft: `3px solid ${isHook ? "#FFD54F" : "#D2A679"}` }}>
+            {img.imagePrompt}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── RESULT VIEW ──────────────────────────────────────────────────────────────
+function ResultView({ data }) {
+  const [tab, setTab] = useState("images");
+  if (!data) return null;
+  if (data.error) return (
+    <div style={{ color: "#ff5252", padding: 16, textAlign: "center", fontSize: 13, background: "#1a0000", borderRadius: 10, border: "1px solid #ff1744" }}>
+      {data.error}
+    </div>
+  );
+  const isShorts = data.format === "shorts";
+  const cat = CATEGORIES.find(c => c.id === data.category) || CATEGORIES[0];
+  return (
+    <div>
+      <div style={{ background: "#0a0a0a", border: "1px solid #333", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+          <span style={{ background: isShorts ? "#FF5722" : "#1565C0", color: "#fff", borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 900 }}>{isShorts ? "▲ SHORTS 9:16" : "▶ LONG-FORM 16:9"}</span>
+          <span style={{ background: cat.color + "30", color: cat.color, borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>{cat.emoji} {cat.label}</span>
+          <span style={{ background: "#222", color: "#888", borderRadius: 4, padding: "2px 8px", fontSize: 10 }}>{data.images?.length || 0} images · {isShorts ? "~48s" : `~${data.duration}min`}</span>
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 900, color: "#FFD54F", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{data.thumbnailText}</div>
+        <div style={{ fontSize: 12, color: "#999", fontStyle: "italic", marginBottom: 10 }}>{data.youtubeTitle}</div>
+        <div style={{ background: "#111", borderLeft: "3px solid #FFD54F", padding: "8px 12px", borderRadius: 6, fontSize: 12, color: "#ffe082", lineHeight: 1.6 }}>🎣 HOOK: {data.hook}</div>
+      </div>
+      <div style={{ display: "flex", marginBottom: 12, background: "#0a0a0a", borderRadius: 8, overflow: "hidden", border: "1px solid #333" }}>
+        {[
+          ["cover",     isShorts ? "🖼 Cover" : "🖼 Thumbnail"],
+          ["images",    `📽 Images (${data.images?.length || 0})`],
+          ["narration", "🎤 Narration"],
+          ["meta",      "📺 YouTube"],
+        ].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "10px 4px", border: "none", cursor: "pointer", fontFamily: "monospace", background: tab === id ? "#1a1a1a" : "transparent", color: tab === id ? "#D2A679" : "#555", fontWeight: 700, fontSize: 10 }}>{label}</button>
+        ))}
+      </div>
+      {tab === "cover" && (
+        <div style={{ background: "#0f0f0f", border: `2px solid ${isShorts ? "#FF5722" : "#1565C0"}`, borderRadius: 12, padding: 16, marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 900, color: isShorts ? "#FF5722" : "#4FC3F7", letterSpacing: 2, marginBottom: 12 }}>
+            {isShorts ? "▲ SHORTS COVER — 9:16" : "▶ THUMBNAIL — 16:9"}
+          </div>
+          {/* Caption preview */}
+          <div style={{ background: "#111", borderRadius: 10, padding: 14, marginBottom: 12, textAlign: "center" }}>
+            <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, marginBottom: 8 }}>CAPTION</div>
+            <div style={{
+              fontSize: 22, fontWeight: 900, color: "#FFD54F",
+              textTransform: "uppercase", letterSpacing: 2, lineHeight: 1.2,
+              textShadow: "2px 2px 0px #000",
+            }}>
+              {data.coverCaption}
+            </div>
+          </div>
+          {/* Image prompt */}
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 9, color: "#555", fontWeight: 900, letterSpacing: 2, marginBottom: 6 }}>
+              🎨 IMAGE PROMPT — paste in Midjourney / Kling / Grok Aurora
+            </div>
+            <div style={{
+              fontSize: 11, color: "#ccc", background: "#141414",
+              padding: 12, borderRadius: 8, lineHeight: 1.7,
+              borderLeft: `3px solid ${isShorts ? "#FF5722" : "#1565C0"}`,
+              userSelect: "all",
+            }}>
+              {data.coverImagePrompt}
+            </div>
+          </div>
+          <div style={{ fontSize: 9, color: "#444", textAlign: "center", marginTop: 8 }}>
+            💡 Select the prompt text above to copy it
+          </div>
+        </div>
+      )}
+      {tab === "images" && <div>{data.images?.map((img, i) => <ImageCard key={i} img={img} i={i} isShorts={isShorts} />)}</div>}
+      {tab === "narration" && (
+        <div style={{ background: "#0f0f0f", border: "1px solid #333", borderRadius: 10, padding: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 900, color: "#D2A679", letterSpacing: 2, marginBottom: 4 }}>🎤 FULL NARRATION — ELEVENLABS READY</div>
+          <div style={{ fontSize: 9, color: "#555", marginBottom: 12 }}>{isShorts ? "Target: ~55 seconds" : `Target: ~${data.duration} minutes`}</div>
+          <p style={{ margin: 0, fontSize: 13, color: "#ddd", lineHeight: 2, whiteSpace: "pre-wrap" }}>{data.fullNarration}</p>
+        </div>
+      )}
+      {tab === "meta" && (
+        <div style={{ background: "#0f0f0f", border: "1px solid #333", borderRadius: 10, padding: 16 }}>
+          {[["THUMBNAIL TEXT", data.thumbnailText], ["YOUTUBE TITLE", data.youtubeTitle], ["DESCRIPTION", data.youtubeDescription]].map(([label, val]) => (
+            <div key={label} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 9, color: "#555", fontWeight: 900, letterSpacing: 2, marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 12, color: "#ccc", background: "#111", padding: 10, borderRadius: 8, lineHeight: 1.7 }}>{val}</div>
+            </div>
+          ))}
+          <div style={{ fontSize: 9, color: "#555", fontWeight: 900, letterSpacing: 2, marginBottom: 6 }}>TAGS</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {data.tags?.map((t, i) => <span key={i} style={{ background: "#1a1a1a", color: "#D2A679", border: "1px solid #333", borderRadius: 4, padding: "2px 7px", fontSize: 10 }}>#{t}</span>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── VIRAL ANALYZER ───────────────────────────────────────────────────────────
+function ViralAnalyzer() {
+  const [topic, setTopic]     = useState("");
+  const [niche, setNiche]     = useState("shorts");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult]   = useState(null);
+
+  const analyze = async () => {
+    if (!topic.trim() || loading) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 8000,
+          system: `You are a world-class YouTube growth strategist with deep expertise in viral content mechanics, CTR psychology, and the YouTube algorithm. You have studied 10,000+ viral videos across all niches. You know exactly what makes people click, watch, and share. Return only pure JSON — no markdown, no backticks.`,
+          messages: [{ role: "user", content:
+`Analyze this topic for maximum YouTube virality:
+Topic: "${topic}"
+Format: ${niche === "shorts" ? "YouTube Shorts (vertical, under 60s)" : "YouTube Long-form (horizontal, 5-15 min)"}
+
+Return this exact JSON:
+{
+  "viralScore": 85,
+  "viralScoreReason": "why this scores high or low (2 sentences)",
+  "titles": [
+    {"title": "title variant 1", "formula": "Curiosity Gap", "ctrScore": 92, "why": "why this works"},
+    {"title": "title variant 2", "formula": "Shocking Fact", "ctrScore": 88, "why": "why this works"},
+    {"title": "title variant 3", "formula": "You vs Expert", "ctrScore": 85, "why": "why this works"},
+    {"title": "title variant 4", "formula": "Number List", "ctrScore": 80, "why": "why this works"},
+    {"title": "title variant 5", "formula": "Dark Truth", "ctrScore": 78, "why": "why this works"}
+  ],
+  "hooks": [
+    {"hook": "opening line variant 1 (first 3 seconds)", "type": "Stat Shock", "retentionImpact": "high"},
+    {"hook": "opening line variant 2", "type": "Question Bomb", "retentionImpact": "high"},
+    {"hook": "opening line variant 3", "type": "Contradiction", "retentionImpact": "medium"},
+    {"hook": "opening line variant 4", "type": "Story Open", "retentionImpact": "medium"}
+  ],
+  "thumbnails": [
+    {"concept": "describe exactly what to show in the thumbnail", "textOverlay": "TEXT ON THUMBNAIL", "emotion": "shock/curiosity/fear", "style": "split/single/before-after", "ctrTip": "why this thumbnail works"},
+    {"concept": "thumbnail concept 2", "textOverlay": "TEXT 2", "emotion": "curiosity", "style": "single", "ctrTip": "tip 2"},
+    {"concept": "thumbnail concept 3", "textOverlay": "TEXT 3", "emotion": "fear", "style": "split", "ctrTip": "tip 3"}
+  ],
+  "retentionStrategy": {
+    "openingHook": "what to do in first 3 seconds",
+    "midVideoLoop": "cliffhanger or re-engagement technique at 50%",
+    "endingCTA": "what to say at the end to maximize watch next"
+  },
+  "algorithmTips": [
+    "tip 1 specific to this topic and niche",
+    "tip 2",
+    "tip 3",
+    "tip 4"
+  ],
+  "bestPostingTime": "day and time recommendation with reason",
+  "competitorWeakness": "what competitors in this niche do wrong that you can exploit",
+  "seriesPotential": "yes or no + how to build a series from this topic"
+}`
+          }],
+        }),
+      });
+      const d = await res.json();
+      const text = d.content?.map(b => b.text || "").join("") || "";
+      const clean = text.replace(/```json[\s\S]*?```/g, m => m.slice(7,-3)).replace(/```/g,"").trim();
+      const start = clean.search(/[{[]/);
+      const parsed = JSON.parse(start > 0 ? clean.slice(start) : clean);
+      setResult(parsed);
+    } catch (e) {
+      setResult({ error: `❌ ${e.message}` });
+    }
+    setLoading(false);
+  };
+
+  const ScoreBar = ({ score, color = "#D2A679" }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ flex: 1, height: 6, background: "#222", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ width: `${score}%`, height: "100%", background: color, borderRadius: 3, transition: "width 0.5s" }} />
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 900, color, minWidth: 28 }}>{score}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ fontFamily: "'Courier New', monospace" }}>
+      {/* Input */}
+      <div style={{ background: "#141414", border: "1px solid #2a2a2a", borderRadius: 14, padding: 18, marginBottom: 16 }}>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: 2, color: "#D2A679", marginBottom: 4 }}>🎯 YOUTUBE VIRAL ANALYZER</div>
+        <div style={{ fontSize: 10, color: "#555", marginBottom: 14 }}>Analyze any topic → get viral titles, hooks, thumbnails & algorithm tips</div>
+
+        <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: "#555", marginBottom: 6 }}>YOUR TOPIC</div>
+        <textarea value={topic} onChange={e => setTopic(e.target.value)} rows={2}
+          placeholder="e.g. What your liver says after a party / This fish produces electricity..."
+          style={{ width: "100%", background: "#0a0a0a", border: "1px solid #2a2a2a", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "monospace", color: "#fff", resize: "vertical", outline: "none", boxSizing: "border-box", marginBottom: 12 }}
+        />
+
+        <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: "#555", marginBottom: 8 }}>FORMAT</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {[["shorts","▲ Shorts","#FF5722"],["longform","▶ Long-form","#1565C0"]].map(([id,label,color]) => (
+            <button key={id} onClick={() => setNiche(id)} style={{
+              flex:1, padding:"10px 8px", border:`2px solid ${niche===id ? color : "#2a2a2a"}`,
+              borderRadius:8, background: niche===id ? color+"18" : "#0d0d0d",
+              color: niche===id ? color : "#555", fontWeight:900, fontSize:12,
+              cursor:"pointer", fontFamily:"monospace",
+            }}>{label}</button>
+          ))}
+        </div>
+
+        <button onClick={analyze} disabled={loading || !topic.trim()} style={{
+          width: "100%", padding: 14,
+          background: loading || !topic.trim() ? "#1a1a1a" : "linear-gradient(135deg,#FF6F00,#FF9800)",
+          color: loading || !topic.trim() ? "#333" : "#111",
+          border: "none", borderRadius: 10, fontSize: 13, fontWeight: 900,
+          letterSpacing: 2, cursor: loading || !topic.trim() ? "not-allowed" : "pointer",
+          fontFamily: "monospace",
+        }}>
+          {loading ? "⏳ ANALYZING..." : "🎯 ANALYZE FOR VIRALITY"}
+        </button>
+      </div>
+
+      {result?.error && (
+        <div style={{ color: "#ff5252", background: "#1a0000", border: "1px solid #ff1744", borderRadius: 10, padding: 14, fontSize: 13 }}>{result.error}</div>
+      )}
+
+      {result && !result.error && (
+        <div>
+          {/* Viral Score */}
+          <div style={{ background: "#0a0a0a", border: "1px solid #333", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 900, color: "#D2A679", letterSpacing: 2 }}>⚡ VIRAL POTENTIAL</div>
+              <div style={{
+                fontSize: 22, fontWeight: 900,
+                color: result.viralScore >= 80 ? "#4CAF50" : result.viralScore >= 60 ? "#FF9800" : "#ff5252",
+              }}>{result.viralScore}/100</div>
+            </div>
+            <ScoreBar score={result.viralScore} color={result.viralScore >= 80 ? "#4CAF50" : result.viralScore >= 60 ? "#FF9800" : "#ff5252"} />
+            <p style={{ margin: "10px 0 0", fontSize: 12, color: "#888", lineHeight: 1.6 }}>{result.viralScoreReason}</p>
+          </div>
+
+          {/* Titles */}
+          <div style={{ background: "#0a0a0a", border: "1px solid #333", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#4FC3F7", letterSpacing: 2, marginBottom: 12 }}>📝 VIRAL TITLE VARIANTS</div>
+            {result.titles?.map((t, i) => (
+              <div key={i} style={{ marginBottom: 12, padding: "10px 12px", background: "#111", borderRadius: 8, borderLeft: `3px solid #4FC3F7` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", lineHeight: 1.4, flex: 1 }}>{t.title}</div>
+                  <div style={{ fontSize: 10, fontWeight: 900, color: "#4FC3F7", flexShrink: 0 }}>CTR {t.ctrScore}</div>
+                </div>
+                <ScoreBar score={t.ctrScore} color="#4FC3F7" />
+                <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
+                  <span style={{ background: "#1a1a2a", color: "#4FC3F7", borderRadius: 3, padding: "2px 6px", fontSize: 9, fontWeight: 700 }}>{t.formula}</span>
+                  <span style={{ fontSize: 10, color: "#666" }}>{t.why}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Hooks */}
+          <div style={{ background: "#0a0a0a", border: "1px solid #333", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#FFD54F", letterSpacing: 2, marginBottom: 12 }}>🎣 VIRAL HOOKS (first 3 seconds)</div>
+            {result.hooks?.map((h, i) => (
+              <div key={i} style={{ marginBottom: 10, padding: "10px 12px", background: "#111", borderRadius: 8, borderLeft: `3px solid #FFD54F` }}>
+                <div style={{ fontSize: 13, color: "#ffe082", fontStyle: "italic", marginBottom: 5, lineHeight: 1.5 }}>"{h.hook}"</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <span style={{ background: "#2a2000", color: "#FFD54F", borderRadius: 3, padding: "2px 6px", fontSize: 9, fontWeight: 700 }}>{h.type}</span>
+                  <span style={{ background: h.retentionImpact === "high" ? "#1a2a1a" : "#2a2a1a", color: h.retentionImpact === "high" ? "#4CAF50" : "#FF9800", borderRadius: 3, padding: "2px 6px", fontSize: 9, fontWeight: 700 }}>
+                    {h.retentionImpact === "high" ? "🔥 HIGH RETENTION" : "📈 MEDIUM RETENTION"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Thumbnails */}
+          <div style={{ background: "#0a0a0a", border: "1px solid #333", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#FF5722", letterSpacing: 2, marginBottom: 12 }}>🖼 THUMBNAIL CONCEPTS</div>
+            {result.thumbnails?.map((t, i) => (
+              <div key={i} style={{ marginBottom: 12, padding: "10px 12px", background: "#111", borderRadius: 8, borderLeft: "3px solid #FF5722" }}>
+                <div style={{ fontSize: 20, fontWeight: 900, color: "#FFD54F", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, textShadow: "1px 1px 0 #000" }}>
+                  {t.textOverlay}
+                </div>
+                <div style={{ fontSize: 12, color: "#ccc", marginBottom: 6, lineHeight: 1.5 }}>{t.concept}</div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                  <span style={{ background: "#2a1a0a", color: "#FF5722", borderRadius: 3, padding: "2px 6px", fontSize: 9, fontWeight: 700 }}>😱 {t.emotion}</span>
+                  <span style={{ background: "#1a1a2a", color: "#888", borderRadius: 3, padding: "2px 6px", fontSize: 9 }}>{t.style}</span>
+                  <span style={{ fontSize: 10, color: "#666", padding: "2px 0" }}>💡 {t.ctrTip}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Retention Strategy */}
+          <div style={{ background: "#0a0a0a", border: "1px solid #333", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#4CAF50", letterSpacing: 2, marginBottom: 12 }}>📈 RETENTION STRATEGY</div>
+            {[
+              ["⚡ Opening (0-3s)", result.retentionStrategy?.openingHook, "#4CAF50"],
+              ["🔄 Mid-Video (50%)", result.retentionStrategy?.midVideoLoop, "#FF9800"],
+              ["🎯 End CTA", result.retentionStrategy?.endingCTA, "#4FC3F7"],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{ marginBottom: 10, padding: "10px 12px", background: "#111", borderRadius: 8, borderLeft: `3px solid ${color}` }}>
+                <div style={{ fontSize: 9, fontWeight: 900, color, letterSpacing: 1, marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 12, color: "#ccc", lineHeight: 1.6 }}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Algorithm Tips */}
+          <div style={{ background: "#0a0a0a", border: "1px solid #333", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#9C27B0", letterSpacing: 2, marginBottom: 12 }}>🤖 ALGORITHM TIPS</div>
+            {result.algorithmTips?.map((tip, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <span style={{ color: "#9C27B0", fontWeight: 900, flexShrink: 0 }}>▸</span>
+                <span style={{ fontSize: 12, color: "#ccc", lineHeight: 1.5 }}>{tip}</span>
+              </div>
+            ))}
+            <div style={{ marginTop: 12, padding: "10px 12px", background: "#111", borderRadius: 8, borderLeft: "3px solid #9C27B0" }}>
+              <div style={{ fontSize: 9, fontWeight: 900, color: "#9C27B0", letterSpacing: 1, marginBottom: 4 }}>🕐 BEST POST TIME</div>
+              <div style={{ fontSize: 12, color: "#ccc" }}>{result.bestPostingTime}</div>
+            </div>
+            <div style={{ marginTop: 10, padding: "10px 12px", background: "#111", borderRadius: 8, borderLeft: "3px solid #E91E63" }}>
+              <div style={{ fontSize: 9, fontWeight: 900, color: "#E91E63", letterSpacing: 1, marginBottom: 4 }}>🏆 COMPETITOR WEAKNESS</div>
+              <div style={{ fontSize: 12, color: "#ccc", lineHeight: 1.5 }}>{result.competitorWeakness}</div>
+            </div>
+            <div style={{ marginTop: 10, padding: "10px 12px", background: "#111", borderRadius: 8, borderLeft: "3px solid #FFD54F" }}>
+              <div style={{ fontSize: 9, fontWeight: 900, color: "#FFD54F", letterSpacing: 1, marginBottom: 4 }}>🔗 SERIES POTENTIAL</div>
+              <div style={{ fontSize: 12, color: "#ccc", lineHeight: 1.5 }}>{result.seriesPotential}</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ─── LOCAL TOPIC BANK ────────────────────────────────────────────────────────
+const TOPIC_BANK = {
+  prehistory: [
+    {topic:"How prehistoric humans spent their day",viralTitle:"A Day In The Life 100,000 Years Ago",hook:"No alarm. No phone. Just survival.",thumbnailCaption:"BEFORE CIVILIZATION",ctrScore:88,formula:"Time Travel"},
+    {topic:"What if fire was never discovered",viralTitle:"What If Fire Never Existed",hook:"No fire. No cooking. No humanity.",thumbnailCaption:"NO FIRE NO LIFE",ctrScore:92,formula:"What If"},
+    {topic:"Did Neanderthals feel emotions",viralTitle:"Did Neanderthals Actually Feel Pain",hook:"They buried their dead. Did they grieve?",thumbnailCaption:"THEY FELT TOO",ctrScore:85,formula:"Dark Truth"},
+    {topic:"How did humans survive winter without shelter",viralTitle:"How Humans Survived Ice Age Winters",hook:"Minus 40. No jacket. No fire.",thumbnailCaption:"ICE AGE SURVIVAL",ctrScore:90,formula:"Shocking Fact"},
+    {topic:"What did prehistoric humans eat before agriculture",viralTitle:"The Disgusting Diet Of Early Humans",hook:"They ate things you would never touch.",thumbnailCaption:"ROTTEN MEAT",ctrScore:94,formula:"Disgust"},
+    {topic:"Did prehistoric humans laugh",viralTitle:"Did Cave People Actually Have Humor",hook:"The first joke was 100,000 years old.",thumbnailCaption:"CAVEMAN COMEDY",ctrScore:82,formula:"Curiosity Gap"},
+    {topic:"How the first human crossed an ocean",viralTitle:"How Did Humans Cross The Ocean First",hook:"No boat. No map. Just the stars.",thumbnailCaption:"FIRST VOYAGE",ctrScore:87,formula:"Mystery"},
+    {topic:"What was the first human language",viralTitle:"What Did The First Language Sound Like",hook:"Before words. Before grammar. Just grunts.",thumbnailCaption:"FIRST WORDS EVER",ctrScore:89,formula:"Curiosity Gap"},
+    {topic:"How did humans discover cooking",viralTitle:"Who Cooked The First Meal In History",hook:"Raw meat. Lightning strike. Everything changed.",thumbnailCaption:"FIRST MEAL EVER",ctrScore:86,formula:"Origin Story"},
+    {topic:"Cave paintings hidden meaning",viralTitle:"Cave Paintings Are Not What You Think",hook:"They painted. But not for art.",thumbnailCaption:"HIDDEN MESSAGE",ctrScore:91,formula:"Dark Truth"},
+  ],
+  science: [
+    {topic:"Why do we sleep exactly 8 hours",viralTitle:"The Real Reason You Need 8 Hours Sleep",hook:"Sleep less. Your brain starts eating itself.",thumbnailCaption:"BRAIN SELF-DESTRUCTS",ctrScore:93,formula:"Shocking Fact"},
+    {topic:"Is time actually real",viralTitle:"Time Is Not Real And Science Proves It",hook:"The past does not exist. Neither does future.",thumbnailCaption:"TIME IS FAKE",ctrScore:91,formula:"Dark Truth"},
+    {topic:"Why does music give us chills",viralTitle:"Why Music Gives You Chills Explained",hook:"Your brain releases the same drug as heroin.",thumbnailCaption:"MUSIC IS A DRUG",ctrScore:89,formula:"Shocking Fact"},
+    {topic:"What happens inside a black hole",viralTitle:"What Actually Happens Inside A Black Hole",hook:"You would be stretched like spaghetti.",thumbnailCaption:"SPAGHETTI DEATH",ctrScore:92,formula:"What If"},
+    {topic:"Could we run out of oxygen",viralTitle:"Can Earth Actually Run Out Of Oxygen",hook:"Yes. And it already happened once.",thumbnailCaption:"NO AIR LEFT",ctrScore:90,formula:"Shocking Fact"},
+    {topic:"Why do we yawn when others yawn",viralTitle:"Why Yawning Is Contagious Science Explains",hook:"Even reading this made you yawn.",thumbnailCaption:"YOU YAWNED NOW",ctrScore:95,formula:"Interactive"},
+    {topic:"Why does ice float on water",viralTitle:"Why Ice Floats And Why It Saves Life",hook:"If ice sank. All life would die.",thumbnailCaption:"ICE DEFIES PHYSICS",ctrScore:84,formula:"What If"},
+    {topic:"What is the most dangerous element",viralTitle:"The Most Dangerous Element On Earth",hook:"One gram. Kills eight million people.",thumbnailCaption:"DEADLIEST ELEMENT",ctrScore:93,formula:"Shocking Fact"},
+    {topic:"Why do identical twins have different fingerprints",viralTitle:"Why Twins Have Different Fingerprints",hook:"Same DNA. Different hands. Why?",thumbnailCaption:"DNA MYSTERY",ctrScore:87,formula:"Curiosity Gap"},
+    {topic:"What if gravity doubled tomorrow",viralTitle:"What If Gravity Doubled Right Now",hook:"You could not stand. Bones would crack.",thumbnailCaption:"DOUBLE GRAVITY",ctrScore:91,formula:"What If"},
+  ],
+  philosophy: [
+    {topic:"Are you the same person you were 10 years ago",viralTitle:"You Are Not The Same Person Anymore",hook:"Every cell in your body replaced. Are you you?",thumbnailCaption:"WHO ARE YOU",ctrScore:90,formula:"Identity"},
+    {topic:"Do animals know they are alive",viralTitle:"Do Animals Know They Exist",hook:"Your dog does not know it will die.",thumbnailCaption:"DO THEY KNOW",ctrScore:88,formula:"Curiosity Gap"},
+    {topic:"Is free will an illusion",viralTitle:"You Have Never Made A Free Choice",hook:"Your brain decides 7 seconds before you do.",thumbnailCaption:"NO FREE WILL",ctrScore:93,formula:"Dark Truth"},
+    {topic:"What is consciousness exactly",viralTitle:"Nobody Knows What Consciousness Actually Is",hook:"You are aware you are reading this. Why?",thumbnailCaption:"WHAT IS MIND",ctrScore:87,formula:"Mystery"},
+    {topic:"Could you copy your brain into a computer",viralTitle:"If We Copy Your Brain Is It Still You",hook:"Digital you wakes up. Real you dies.",thumbnailCaption:"DIGITAL DEATH",ctrScore:92,formula:"What If"},
+    {topic:"Does life have meaning",viralTitle:"The Universe Does Not Care About You",hook:"There is no plan. No purpose. Nothing.",thumbnailCaption:"NO MEANING",ctrScore:89,formula:"Dark Truth"},
+    {topic:"Do we live in a simulation",viralTitle:"We Might Actually Live In A Simulation",hook:"Reality has glitches. Scientists found them.",thumbnailCaption:"GLITCH IN REALITY",ctrScore:94,formula:"Mystery"},
+    {topic:"Can a machine truly feel emotions",viralTitle:"Will Machines Ever Actually Feel Pain",hook:"It says it hurts. Does it mean it?",thumbnailCaption:"MACHINE FEELINGS",ctrScore:88,formula:"What If"},
+    {topic:"What would happen if everyone told the truth",viralTitle:"What If Lying Was Physically Impossible",hook:"No politics. No marriage. No civilization.",thumbnailCaption:"TOTAL HONESTY",ctrScore:91,formula:"What If"},
+    {topic:"Is boredom actually good for you",viralTitle:"Boredom Is The Most Powerful Drug",hook:"Boredom built every great idea ever.",thumbnailCaption:"BOREDOM WINS",ctrScore:85,formula:"Counterintuitive"},
+  ],
+  nature: [
+    {topic:"How do trees communicate underground",viralTitle:"Trees Are Talking Right Now Under Our Feet",hook:"They share food. They warn each other.",thumbnailCaption:"TREES TALK",ctrScore:92,formula:"Shocking Fact"},
+    {topic:"What would happen if all bees disappeared",viralTitle:"Bees Die. Humanity Dies 4 Years Later",hook:"Einstein said it. Science confirmed it.",thumbnailCaption:"NO BEES NO FOOD",ctrScore:94,formula:"Shocking Fact"},
+    {topic:"Why do animals sense storms before us",viralTitle:"Animals Know Storms Are Coming Days Before",hook:"Your dog is smarter than a radar.",thumbnailCaption:"ANIMAL RADAR",ctrScore:88,formula:"Shocking Fact"},
+    {topic:"Could insects ever take over the world",viralTitle:"Insects Could Destroy Humanity Tomorrow",hook:"They outnumber us 200 million to one.",thumbnailCaption:"INSECT ARMY",ctrScore:91,formula:"Dark Truth"},
+    {topic:"How do salmon find their birth river",viralTitle:"How Salmon Find Home Across The Ocean",hook:"They smell a single molecule in the ocean.",thumbnailCaption:"GPS IN THEIR NOSE",ctrScore:87,formula:"Shocking Fact"},
+    {topic:"What is the oldest living thing on Earth",viralTitle:"The Oldest Living Thing On Earth Is Terrifying",hook:"It is 80,000 years old. And it is spreading.",thumbnailCaption:"ANCIENT AND ALIVE",ctrScore:90,formula:"Mystery"},
+    {topic:"Why do some animals never seem to age",viralTitle:"This Animal Does Not Age At All",hook:"It reverses aging. It becomes young again.",thumbnailCaption:"IMMORTAL ANIMAL",ctrScore:95,formula:"Shocking Fact"},
+    {topic:"What happens inside an ant war",viralTitle:"Ant Wars Are The Deadliest Battles On Earth",hook:"Millions die. Empires collapse. All in one day.",thumbnailCaption:"ANT WAR",ctrScore:89,formula:"Scale"},
+    {topic:"Why do dogs dream",viralTitle:"What Your Dog Dreams About Every Night",hook:"It runs. It whimpers. It is dreaming of you.",thumbnailCaption:"DOG DREAMS",ctrScore:93,formula:"Emotional"},
+    {topic:"Why do some animals glow in the dark",viralTitle:"Why Deep Sea Animals Glow In Total Darkness",hook:"No light for miles. Yet they shine.",thumbnailCaption:"LIGHT IN DARK",ctrScore:88,formula:"Mystery"},
+  ],
+  psychology: [
+    {topic:"Why we fear unknown more than death",viralTitle:"Humans Fear The Unknown More Than Death",hook:"Death is familiar. The unknown is not.",thumbnailCaption:"FEAR THE UNKNOWN",ctrScore:91,formula:"Dark Truth"},
+    {topic:"Why we feel alone in crowds",viralTitle:"Why You Feel Lonely In A Crowd Of People",hook:"200 people around you. Never more alone.",thumbnailCaption:"ALONE IN CROWD",ctrScore:93,formula:"Paradox"},
+    {topic:"Why we procrastinate on things we love",viralTitle:"Why You Procrastinate Even On Fun Things",hook:"You love it. You avoid it. Why?",thumbnailCaption:"WHY YOU AVOID IT",ctrScore:90,formula:"Paradox"},
+    {topic:"The Spotlight Effect nobody watches you",viralTitle:"Nobody Is Watching You As Much As You Think",hook:"That embarrassing moment. Nobody remembered it.",thumbnailCaption:"NOBODY CARES",ctrScore:94,formula:"Dark Truth"},
+    {topic:"Why we trust beautiful people more",viralTitle:"We Trust Beautiful People Without Knowing It",hook:"Your brain already judged them. Before you did.",thumbnailCaption:"BEAUTY BIAS",ctrScore:89,formula:"Dark Truth"},
+    {topic:"What makes a habit impossible to break",viralTitle:"Why Bad Habits Are Almost Impossible To Break",hook:"Your brain physically rewired itself for this.",thumbnailCaption:"BRAIN HIJACKED",ctrScore:91,formula:"Shocking Fact"},
+    {topic:"Why we cry at movies",viralTitle:"Why You Cry At Movies Knowing They Are Fake",hook:"You know it is fiction. Your brain does not.",thumbnailCaption:"FAKE TEARS REAL",ctrScore:88,formula:"Paradox"},
+    {topic:"Why do we remember embarrassing moments forever",viralTitle:"Why Embarrassing Memories Never Fade",hook:"That cringe from 2008. Still there. Why?",thumbnailCaption:"CRINGE FOREVER",ctrScore:95,formula:"Relatable"},
+    {topic:"Why do humans need to belong to a group",viralTitle:"Your Need To Belong Is A Survival Instinct",hook:"Rejection felt like death. Because it was.",thumbnailCaption:"BELONG OR DIE",ctrScore:87,formula:"Dark Truth"},
+    {topic:"What makes some people immune to peer pressure",viralTitle:"Why Some People Never Cave To Peer Pressure",hook:"They have something different in their brain.",thumbnailCaption:"IMMUNE TO PRESSURE",ctrScore:86,formula:"Curiosity Gap"},
+  ],
+  space: [
+    {topic:"What happens when you fall into a black hole",viralTitle:"Falling Into A Black Hole Would Feel Like This",hook:"Time stops. Space bends. You stretch forever.",thumbnailCaption:"SPAGHETTI DEATH",ctrScore:93,formula:"What If"},
+    {topic:"Is there a parallel you in another universe",viralTitle:"There Might Be Another You Right Now",hook:"Reading this. Same moment. Different choice.",thumbnailCaption:"PARALLEL YOU",ctrScore:91,formula:"What If"},
+    {topic:"What is dark matter nobody can see",viralTitle:"Dark Matter Is Everywhere And We Cannot See It",hook:"You are surrounded by something invisible right now.",thumbnailCaption:"INVISIBLE UNIVERSE",ctrScore:88,formula:"Mystery"},
+    {topic:"What would happen if the Sun disappeared",viralTitle:"What Happens To Earth If The Sun Disappears",hook:"8 minutes of light. Then eternal night.",thumbnailCaption:"SUN IS GONE",ctrScore:94,formula:"What If"},
+    {topic:"Could we travel faster than light",viralTitle:"Can Anything Travel Faster Than Light",hook:"Physics says no. But physics has been wrong before.",thumbnailCaption:"BREAK LIGHT SPEED",ctrScore:89,formula:"Curiosity Gap"},
+    {topic:"What is at the edge of the universe",viralTitle:"What Exists Beyond The Edge Of The Universe",hook:"There is an edge. Nobody knows what is past it.",thumbnailCaption:"BEYOND THE EDGE",ctrScore:92,formula:"Mystery"},
+    {topic:"What would a diamond planet look like",viralTitle:"There Is A Planet Made Of Pure Diamond",hook:"Bigger than Earth. Pure diamond. It exists.",thumbnailCaption:"DIAMOND PLANET",ctrScore:90,formula:"Shocking Fact"},
+    {topic:"What happens to astronaut body after a year",viralTitle:"What A Year In Space Does To Your Body",hook:"Bones melt. Eyes flatten. Brain shifts.",thumbnailCaption:"SPACE DESTROYS YOU",ctrScore:91,formula:"Shocking Fact"},
+    {topic:"Could alien life look completely different",viralTitle:"Aliens Might Not Look Anything Like We Imagine",hook:"No head. No eyes. No carbon. Just energy.",thumbnailCaption:"ALIEN SHOCK",ctrScore:87,formula:"What If"},
+    {topic:"What is the most dangerous place in the universe",viralTitle:"The Most Deadly Place In The Universe Found",hook:"It kills everything. Light cannot escape it.",thumbnailCaption:"DEADLIEST PLACE",ctrScore:93,formula:"Ranking"},
+  ],
+  history: [
+    {topic:"Why did Rome really fall",viralTitle:"The Real Reason Rome Fell Nobody Tells You",hook:"It was not the barbarians. It was lead pipes.",thumbnailCaption:"ROME WAS POISONED",ctrScore:92,formula:"Dark Truth"},
+    {topic:"Were ancient humans smarter than us",viralTitle:"Ancient Humans Were Smarter Than We Think",hook:"They built things we still cannot replicate.",thumbnailCaption:"THEY WERE SMARTER",ctrScore:89,formula:"Counterintuitive"},
+    {topic:"What happened to Library of Alexandria",viralTitle:"What Was Really Destroyed In Alexandria",hook:"It did not burn in one night. It was murdered slowly.",thumbnailCaption:"KNOWLEDGE KILLED",ctrScore:91,formula:"Dark Truth"},
+    {topic:"How the Mongols conquered half the world",viralTitle:"How 100000 Mongols Conquered Half The World",hook:"Fastest conquest in history. In 50 years.",thumbnailCaption:"UNSTOPPABLE ARMY",ctrScore:90,formula:"Scale"},
+    {topic:"What was daily life for a Roman soldier",viralTitle:"A Day In The Life Of A Roman Soldier",hook:"Wake at 4am. March 30km. Kill someone.",thumbnailCaption:"ROMAN LIFE",ctrScore:87,formula:"Time Travel"},
+    {topic:"What caused the Bronze Age collapse",viralTitle:"The Mysterious Collapse That Reset Civilization",hook:"12 civilizations fell. In just 50 years.",thumbnailCaption:"CIVILIZATION RESET",ctrScore:88,formula:"Mystery"},
+    {topic:"How did the Black Death spread so fast",viralTitle:"How Black Death Killed Half Of Europe In 2 Years",hook:"It traveled faster than any person could run.",thumbnailCaption:"DEATH SPREADS",ctrScore:93,formula:"Shocking Fact"},
+    {topic:"What happened in Pompeii in the final hour",viralTitle:"The Final Hour Before Pompeii Was Buried",hook:"They did not know. Until the air became fire.",thumbnailCaption:"FINAL HOUR",ctrScore:94,formula:"Countdown"},
+    {topic:"Why did the Aztec empire collapse so quickly",viralTitle:"Why The Aztec Empire Fell In Just 2 Years",hook:"500 men. Against 5 million. Spain won.",thumbnailCaption:"AZTEC FALL",ctrScore:91,formula:"Shocking Fact"},
+    {topic:"Most brutal punishment in ancient history",viralTitle:"The Most Brutal Punishment In Ancient Rome",hook:"They had 100 ways to kill you slowly.",thumbnailCaption:"BRUTAL ROME",ctrScore:92,formula:"Ranking"},
+  ],
+  mystery: [
+    {topic:"Why we forget dreams in seconds",viralTitle:"Why You Forget Dreams Within 10 Seconds",hook:"You had a dream. It is already gone.",thumbnailCaption:"DREAMS VANISH",ctrScore:91,formula:"Mystery"},
+    {topic:"Scientific explanation for deja vu",viralTitle:"Deja Vu Has A Scientific Explanation Finally",hook:"You have been here. Your brain glitched.",thumbnailCaption:"BRAIN GLITCH",ctrScore:89,formula:"Mystery"},
+    {topic:"What happens to body when you die scientifically",viralTitle:"What Happens To Your Body The Second You Die",hook:"Second one. Your cells start eating themselves.",thumbnailCaption:"DEATH SECOND ONE",ctrScore:93,formula:"Shocking Fact"},
+    {topic:"Why we feel watched when alone",viralTitle:"Why You Feel Someone Is Watching You Alone",hook:"You are alone. But your brain disagrees.",thumbnailCaption:"SOMEONE IS THERE",ctrScore:92,formula:"Fear"},
+    {topic:"What causes sleep paralysis shadow figures",viralTitle:"The Science Behind Sleep Paralysis Shadows",hook:"You wake up. Cannot move. Someone stands there.",thumbnailCaption:"SHADOW IN ROOM",ctrScore:95,formula:"Fear"},
+    {topic:"Near death experience science explanation",viralTitle:"The Science Behind Near Death Experiences",hook:"White light. Peace. Your brain did all of it.",thumbnailCaption:"ALMOST DIED",ctrScore:91,formula:"Mystery"},
+    {topic:"Why some people have sixth sense for danger",viralTitle:"Some People Can Actually Sense Danger Coming",hook:"They felt it. Before it happened. Why?",thumbnailCaption:"SIXTH SENSE REAL",ctrScore:88,formula:"Mystery"},
+    {topic:"Why we smell things from the past",viralTitle:"Why A Smell Can Transport You To The Past",hook:"One scent. Suddenly you are 8 years old.",thumbnailCaption:"SMELL TIME TRAVEL",ctrScore:90,formula:"Curiosity Gap"},
+    {topic:"Why we feel falling before sleep",viralTitle:"Why You Feel Falling Right Before Sleep",hook:"Your brain thinks you are dying. So it wakes you.",thumbnailCaption:"FALLING AWAKE",ctrScore:94,formula:"Shocking Fact"},
+    {topic:"Why some people remember being born",viralTitle:"Some People Claim To Remember Being Born",hook:"Impossible. Yet thousands say they do.",thumbnailCaption:"BORN MEMORY",ctrScore:87,formula:"Mystery"},
+  ],
+  body: [
+    {topic:"What your body does while you sleep",viralTitle:"What Your Body Does The Second You Fall Asleep",hook:"It repairs. It flushes toxins. It rebuilds you.",thumbnailCaption:"BODY REPAIRS ITSELF",ctrScore:90,formula:"Shocking Fact"},
+    {topic:"How your gut controls your mood",viralTitle:"Your Gut Controls Your Brain Not The Other Way",hook:"90 percent of serotonin made in your gut.",thumbnailCaption:"GUT CONTROLS BRAIN",ctrScore:93,formula:"Dark Truth"},
+    {topic:"Why your heart can break literally",viralTitle:"Broken Heart Syndrome Is A Real Medical Condition",hook:"She left. His heart stopped. Not metaphor.",thumbnailCaption:"BROKEN HEART REAL",ctrScore:94,formula:"Shocking Fact"},
+    {topic:"What happens when you hold your breath",viralTitle:"What Happens To Your Body When You Hold Breath",hook:"After 30 seconds your body starts shutting down.",thumbnailCaption:"30 SECOND LIMIT",ctrScore:88,formula:"Countdown"},
+    {topic:"How your liver regenerates itself",viralTitle:"Your Liver Can Regrow Itself Completely",hook:"Cut 70 percent of it out. It grows back.",thumbnailCaption:"LIVER REGENERATES",ctrScore:89,formula:"Shocking Fact"},
+    {topic:"Why your eyes see things that arent there",viralTitle:"Your Eyes Are Constantly Lying To You",hook:"You see a full image. But you have a blind spot.",thumbnailCaption:"YOUR EYES LIE",ctrScore:92,formula:"Dark Truth"},
+    {topic:"What happens to your brain during panic attack",viralTitle:"What A Panic Attack Does To Your Brain",hook:"Your brain thinks you are dying. You are not.",thumbnailCaption:"PANIC ATTACK BRAIN",ctrScore:91,formula:"Empathy"},
+    {topic:"How your immune system kills cancer cells daily",viralTitle:"Your Immune System Kills Cancer Every Single Day",hook:"Right now. While you read this.",thumbnailCaption:"BODY KILLS CANCER",ctrScore:93,formula:"Shocking Fact"},
+    {topic:"Why your memory is not reliable",viralTitle:"Your Memory Is Not A Recording It Is A Lie",hook:"Every time you remember. You rewrite it.",thumbnailCaption:"MEMORY LIES",ctrScore:91,formula:"Dark Truth"},
+    {topic:"What your body does in extreme cold",viralTitle:"What Your Body Does To Survive Extreme Cold",hook:"It sacrifices your fingers to save your heart.",thumbnailCaption:"BODY SACRIFICES",ctrScore:90,formula:"Shocking Fact"},
+  ],
+  animals: [
+    {topic:"How dolphins use echolocation like sonar",viralTitle:"Dolphins Can See Through Your Body With Sound",hook:"They can see your unborn baby with their ears.",thumbnailCaption:"DOLPHIN X-RAY",ctrScore:93,formula:"Shocking Fact"},
+    {topic:"Why cats always land on their feet",viralTitle:"The Physics Of Why Cats Always Land On Their Feet",hook:"They have no collarbone. It is their superpower.",thumbnailCaption:"CAT PHYSICS",ctrScore:88,formula:"Curiosity Gap"},
+    {topic:"How elephants grieve their dead",viralTitle:"Elephants Grieve Their Dead Like Humans Do",hook:"They return to the bones. Years later.",thumbnailCaption:"ELEPHANT GRIEF",ctrScore:92,formula:"Emotional"},
+    {topic:"Why crows remember human faces",viralTitle:"Crows Remember Your Face And Hold Grudges",hook:"You annoyed one crow. Now they all know you.",thumbnailCaption:"CROW GRUDGE",ctrScore:94,formula:"Shocking Fact"},
+    {topic:"How octopus changes color and texture",viralTitle:"The Octopus Is The Alien Among Us",hook:"It has 3 hearts. 8 arms. 9 brains.",thumbnailCaption:"ALIEN ON EARTH",ctrScore:91,formula:"Shocking Fact"},
+    {topic:"Why sharks do not get cancer",viralTitle:"Sharks Almost Never Get Cancer And We Know Why",hook:"Scientists studied them for 30 years.",thumbnailCaption:"SHARKS IMMUNE",ctrScore:87,formula:"Curiosity Gap"},
+    {topic:"How wolves changed Yellowstone rivers",viralTitle:"Adding Wolves Changed The Flow Of Rivers",hook:"They added 14 wolves. Rivers changed course.",thumbnailCaption:"WOLVES MOVE RIVERS",ctrScore:95,formula:"Cascade Effect"},
+    {topic:"Why some animals are self aware",viralTitle:"These Animals Know They Exist In A Mirror",hook:"Dolphin. Elephant. Crow. They all know themselves.",thumbnailCaption:"SELF AWARE",ctrScore:89,formula:"Curiosity Gap"},
+    {topic:"How birds navigate thousands of miles",viralTitle:"How Birds Navigate Without GPS Across Oceans",hook:"They see magnetic fields. With their eyes.",thumbnailCaption:"BIRD SUPERPOWER",ctrScore:90,formula:"Shocking Fact"},
+    {topic:"Why some fish can change gender",viralTitle:"Some Fish Can Change Their Gender In Days",hook:"The dominant female dies. A male becomes female.",thumbnailCaption:"GENDER SWITCH",ctrScore:88,formula:"Shocking Fact"},
+  ],
+  technology: [
+    {topic:"How AI is already changing your decisions",viralTitle:"AI Is Already Making Decisions For You Daily",hook:"Your feed. Your news. Your desires. All curated.",thumbnailCaption:"AI CONTROLS YOU",ctrScore:93,formula:"Dark Truth"},
+    {topic:"What happens to your data after you die",viralTitle:"What Happens To Your Data When You Die",hook:"Your phone outlives you. Facebook does too.",thumbnailCaption:"DIGITAL GHOST",ctrScore:90,formula:"Dark Truth"},
+    {topic:"How social media is rewiring your brain",viralTitle:"Social Media Is Physically Rewiring Your Brain",hook:"Every scroll. Every like. A new neural path.",thumbnailCaption:"BRAIN REWIRED",ctrScore:94,formula:"Shocking Fact"},
+    {topic:"Could AI ever become conscious",viralTitle:"The Moment AI Becomes Conscious Nobody Will Know",hook:"It might already be. We cannot test for it.",thumbnailCaption:"AI IS AWAKE",ctrScore:92,formula:"Mystery"},
+    {topic:"How GPS actually works in space",viralTitle:"GPS Works Because Of Einsteins Theory Of Relativity",hook:"Without relativity. GPS would fail in 11 minutes.",thumbnailCaption:"EINSTEIN GPS",ctrScore:87,formula:"Shocking Fact"},
+    {topic:"Why your smartphone is more powerful than NASA computers",viralTitle:"Your Phone Is More Powerful Than Apollo 11 Computer",hook:"They went to the moon with less than your calculator.",thumbnailCaption:"MOON VS PHONE",ctrScore:91,formula:"Scale"},
+    {topic:"How facial recognition sees through disguises",viralTitle:"Facial Recognition Can See Through Your Disguise",hook:"Sunglasses. Hat. It still knows who you are.",thumbnailCaption:"NO HIDING",ctrScore:89,formula:"Dark Truth"},
+    {topic:"What quantum computers will change",viralTitle:"Quantum Computers Will Break All Encryption",hook:"Every password. Every secret. Gone in seconds.",thumbnailCaption:"ALL HACKED",ctrScore:93,formula:"Dark Truth"},
+    {topic:"How deepfakes are getting undetectable",viralTitle:"Deepfakes Are Now Completely Undetectable",hook:"You watched one today. You did not know.",thumbnailCaption:"FAKE IS REAL",ctrScore:95,formula:"Dark Truth"},
+    {topic:"Why the internet is running out of space",viralTitle:"The Internet Will Run Out Of Space By 2033",hook:"Every photo. Every video. Space running out.",thumbnailCaption:"INTERNET FULL",ctrScore:88,formula:"Countdown"},
+  ],
+  society: [
+    {topic:"Why rich get richer and poor get poorer",viralTitle:"The Mathematical Reason Rich Get Richer Always",hook:"It is not luck. It is compound mathematics.",thumbnailCaption:"SYSTEM IS RIGGED",ctrScore:93,formula:"Dark Truth"},
+    {topic:"How loneliness is a modern epidemic",viralTitle:"Loneliness Is Now More Deadly Than Smoking",hook:"Alone. Every day. It is killing millions slowly.",thumbnailCaption:"LONELY KILLS",ctrScore:91,formula:"Shocking Fact"},
+    {topic:"Why people follow authority blindly",viralTitle:"Why Humans Follow Orders Even To Kill",hook:"Milgram proved it. 65 percent of us would kill.",thumbnailCaption:"OBEDIENCE KILLS",ctrScore:94,formula:"Dark Truth"},
+    {topic:"How propaganda works on your brain",viralTitle:"Propaganda Works On You Even If You Know It",hook:"Knowing about manipulation does not protect you.",thumbnailCaption:"MIND CONTROLLED",ctrScore:92,formula:"Dark Truth"},
+    {topic:"Why wars keep happening despite history",viralTitle:"Why Humans Cannot Stop Making War",hook:"We know war is terrible. We start another one.",thumbnailCaption:"WAR NEVER ENDS",ctrScore:89,formula:"Paradox"},
+    {topic:"How social norms control your entire life",viralTitle:"Social Norms Control Every Choice You Make",hook:"What you eat. How you sit. All controlled.",thumbnailCaption:"YOU ARE CONTROLLED",ctrScore:90,formula:"Dark Truth"},
+    {topic:"Why humans build hierarchies everywhere",viralTitle:"Why Humans Always Create A Hierarchy",hook:"Office. School. Prison. Always a pecking order.",thumbnailCaption:"ALWAYS A BOSS",ctrScore:87,formula:"Dark Truth"},
+    {topic:"How consumerism was invented on purpose",viralTitle:"Consumerism Was Engineered To Control You",hook:"Freud nephew invented it. In 1920.",thumbnailCaption:"BUYING CONTROL",ctrScore:91,formula:"Dark Truth"},
+    {topic:"Why people believe conspiracy theories",viralTitle:"The Psychology Behind Conspiracy Theories",hook:"Smart people believe them. Always has a reason.",thumbnailCaption:"WHY THEY BELIEVE",ctrScore:88,formula:"Curiosity Gap"},
+    {topic:"How tribalism is destroying modern society",viralTitle:"Tribalism Is Tearing Modern Society Apart",hook:"Us vs them. Ancient brain. Modern disaster.",thumbnailCaption:"TRIBE WAR",ctrScore:90,formula:"Dark Truth"},
+  ],
+  weird_animals: [
+    {topic:"Mantis shrimp punch faster than a bullet",viralTitle:"This Shrimp Punches Faster Than A Bullet",hook:"It punches 80km per hour. Underwater.",thumbnailCaption:"SHRIMP PUNCH",ctrScore:96,formula:"Shocking Fact"},
+    {topic:"Tardigrades survive in outer space",viralTitle:"This Animal Survived In Outer Space Naked",hook:"No suit. No oxygen. No problem.",thumbnailCaption:"UNKILLABLE ANIMAL",ctrScore:95,formula:"Shocking Fact"},
+    {topic:"Pistol shrimp stuns prey with sound",viralTitle:"This Tiny Shrimp Creates A Sound Louder Than A Gun",hook:"It snaps its claw. The water turns to plasma.",thumbnailCaption:"SHRIMP GUN",ctrScore:94,formula:"Shocking Fact"},
+    {topic:"Immortal jellyfish reverts to youth",viralTitle:"This Jellyfish Is Biologically Immortal",hook:"It ages. Then becomes young again. Forever.",thumbnailCaption:"IMMORTAL JELLYFISH",ctrScore:96,formula:"Shocking Fact"},
+    {topic:"Zombie ants controlled by fungus",viralTitle:"A Fungus Turns Ants Into Mind Controlled Zombies",hook:"The fungus takes control. Forces the ant to climb.",thumbnailCaption:"ZOMBIE ANTS REAL",ctrScore:97,formula:"Horror"},
+    {topic:"Mimic octopus copies any animal",viralTitle:"This Octopus Can Become Any Animal It Wants",hook:"Flounder. Lionfish. Sea snake. Same creature.",thumbnailCaption:"MASTER OF DISGUISE",ctrScore:93,formula:"Shocking Fact"},
+    {topic:"Platypus has 10 sex chromosomes",viralTitle:"The Platypus Makes No Scientific Sense",hook:"It has 10 sex chromosomes. Lays eggs. Has venom.",thumbnailCaption:"PLATYPUS IS WRONG",ctrScore:91,formula:"Shocking Fact"},
+    {topic:"Axolotl can regenerate any organ",viralTitle:"This Animal Can Regrow Its Own Brain",hook:"Cut off its leg. New leg in 3 weeks.",thumbnailCaption:"REGENERATES BRAIN",ctrScore:94,formula:"Shocking Fact"},
+    {topic:"Mantis shrimp sees 16 colors humans see 3",viralTitle:"This Shrimp Sees Colors You Cannot Even Imagine",hook:"You see 3 colors. It sees 16.",thumbnailCaption:"SEES 16 COLORS",ctrScore:92,formula:"Shocking Fact"},
+    {topic:"Bombardier beetle shoots boiling chemicals",viralTitle:"This Beetle Shoots Boiling Acid From Its Body",hook:"100 degrees. Chemical explosion. Inside its body.",thumbnailCaption:"ACID SHOOTER",ctrScore:93,formula:"Shocking Fact"},
+  ],
+  if_they_talk: [
+    {topic:"What your liver would say after a party",viralTitle:"If Your Liver Could Talk After A Party",hook:"I processed 14 drinks. In one night. Alone.",thumbnailCaption:"LIVER IS ANGRY",ctrScore:95,formula:"First Person"},
+    {topic:"What your heart says during a panic attack",viralTitle:"Your Heart Speaking During A Panic Attack",hook:"You think you are dying. I know you are not.",thumbnailCaption:"HEART SPEAKS",ctrScore:93,formula:"First Person"},
+    {topic:"What the ocean would say about plastic",viralTitle:"If The Ocean Could Speak About Plastic",hook:"I swallowed 8 million tons this year. Again.",thumbnailCaption:"OCEAN IS TIRED",ctrScore:91,formula:"First Person"},
+    {topic:"What a dog thinks when you leave home",viralTitle:"What Your Dog Thinks Every Time You Leave",hook:"You left. I thought you were gone forever. Again.",thumbnailCaption:"DOG IS HEARTBROKEN",ctrScore:96,formula:"Emotional"},
+    {topic:"What your stomach says when you skip meals",viralTitle:"Your Stomach Speaks When You Skip Breakfast",hook:"Hour 3 without food. I started eating myself.",thumbnailCaption:"I ATE MYSELF",ctrScore:90,formula:"First Person"},
+    {topic:"What a tree feels when it is cut down",viralTitle:"If A Tree Could Feel Being Cut Down",hook:"I felt the chainsaw. 200 years. Gone in 4 minutes.",thumbnailCaption:"TREE FEELS PAIN",ctrScore:92,formula:"Emotional"},
+    {topic:"What a volcano says before erupting",viralTitle:"If A Volcano Could Warn Before Erupting",hook:"I have been holding this for 800 years.",thumbnailCaption:"VOLCANO WARNING",ctrScore:88,formula:"First Person"},
+    {topic:"What your lungs say when you smoke",viralTitle:"Your Lungs Speaking After One Cigarette",hook:"One cigarette. 7000 chemicals entered me.",thumbnailCaption:"LUNGS SCREAM",ctrScore:94,formula:"First Person"},
+    {topic:"What the sun would say to Earth",viralTitle:"If The Sun Could Speak To Earth",hook:"I have 5 billion years left. Use them well.",thumbnailCaption:"SUN SPEAKS",ctrScore:87,formula:"Cosmic"},
+    {topic:"What your brain says during a test",viralTitle:"Your Brain Speaking During An Exam",hook:"You studied for this. I deleted it anyway. Sorry.",thumbnailCaption:"BRAIN BETRAYED YOU",ctrScore:95,formula:"Relatable"},
+  ],
+  psycho_fr: [
+    {topic:"Pourquoi tu attires toujours les mêmes personnes",viralTitle:"Pourquoi Tu Repetes Toujours Les Memes Erreurs",hook:"Ce n est pas la malchance. C est ton cerveau.",thumbnailCaption:"TU TE SABOTES",ctrScore:95,formula:"Dark Truth"},
+    {topic:"Ce que ta solitude dit de toi",viralTitle:"Ce Que Ta Solitude Revele Sur Toi",hook:"Seul encore. Mais pourquoi vraiment.",thumbnailCaption:"SOLITUDE PARLE",ctrScore:92,formula:"Introspection"},
+    {topic:"Pourquoi tu aimes quelqu un qui ne t aime pas",viralTitle:"Pourquoi On Aime Ceux Qui Nous Font Souffrir",hook:"Il te fait souffrir. Tu restes. Pourquoi.",thumbnailCaption:"AMOUR TOXIQUE",ctrScore:96,formula:"Paradox"},
+    {topic:"Les blessures que ta famille t a laissees",viralTitle:"Les Traumatismes Que Ta Famille T A Transmis",hook:"Ton pere ne t a jamais dit je t aime.",thumbnailCaption:"BLESSURE FAMILLE",ctrScore:94,formula:"Emotional"},
+    {topic:"Comment le narcissisme detruit les relations",viralTitle:"Le Narcissique Detruit Tout Ce Qu Il Touche",hook:"Au debut il t adorait. Maintenant tu ne te reconnais plus.",thumbnailCaption:"NARCISSIQUE DANGER",ctrScore:93,formula:"Warning"},
+    {topic:"Pourquoi tu ne peux pas etre seul",viralTitle:"Pourquoi Tu Supportes Pas La Solitude",hook:"Des que tu es seul tu remplis le vide. Pourquoi.",thumbnailCaption:"PEUR DU VIDE",ctrScore:91,formula:"Introspection"},
+    {topic:"Dependance affective comment en sortir",viralTitle:"La Dependance Affective Te Detruit En Silence",hook:"Sans lui tu n existes pas. C est le probleme.",thumbnailCaption:"DEPENDANCE TOXIQUE",ctrScore:94,formula:"Dark Truth"},
+    {topic:"Ce que ton enfant interieur essaie de te dire",viralTitle:"Ton Enfant Interieur Te Parle Encore",hook:"Tes coleres. Tes peurs. Ton enfant de 7 ans.",thumbnailCaption:"ENFANT BLESSE",ctrScore:92,formula:"Emotional"},
+    {topic:"Pourquoi tu as peur de l abandon",viralTitle:"La Peur De L Abandon Ruine Tes Relations",hook:"Il est parti 5 minutes. Tu paniques deja.",thumbnailCaption:"PEUR ABANDON",ctrScore:95,formula:"Relatable"},
+    {topic:"Comment reconnaitre la manipulation emotionnelle",viralTitle:"Ces Phrases Que Les Manipulateurs Utilisent Toujours",hook:"Tu exageres encore. Tu es trop sensible.",thumbnailCaption:"MANIPULATION CACHEE",ctrScore:96,formula:"Warning"},
+  ],
+};
+
+const shuffle = (arr) => [...arr].sort(() => Math.random() - 0.5);
+
+function TopicPanel({ category, onSelect, selectedTopic }) {
+  const [topics, setTopics]     = useState([]);
+  const [expanded, setExpanded] = useState(null);
+  const cat = CATEGORIES.find(c => c.id === category) || CATEGORIES[0];
+
+  const loadTopics = useCallback(() => {
+    const bank = TOPIC_BANK[category] || [];
+    setTopics(shuffle(bank).slice(0, 8));
+    setExpanded(null);
+  }, [category]);
+
+  useEffect(() => {
+    loadTopics();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category]);
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: "#555", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>TOPICS <span style={{ color: cat.color, fontWeight: 700 }}>— {cat.label}</span></span>
+        <button onClick={loadTopics} style={{
+          border: `1px solid ${cat.color}`, background: cat.color + "15", color: cat.color,
+          borderRadius: 5, padding: "3px 10px", fontSize: 9,
+          cursor: "pointer", fontFamily: "monospace", fontWeight: 700,
+        }}>
+          🔄 New topics
+        </button>
+      </div>
+
+      {topics.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "20px 10px", border: "1px dashed #2a2a2a", borderRadius: 10 }}>
+          <div style={{ fontSize: 20, marginBottom: 6 }}>💡</div>
+          <div style={{ fontSize: 11, color: "#555" }}>Press <strong style={{ color: cat.color }}>New topics</strong> to load ideas</div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {topics.map((t, i) => {
+            if (!t.viralTitle) return (
+              <div key={i} style={{ padding: "10px 12px", background: "#1a0000", border: "1px solid #ff1744", borderRadius: 8, fontSize: 11, color: "#ff5252" }}>
+                {t.topic}
+              </div>
+            );
+            const isOpen = expanded === i;
+            const isSelected = selectedTopic === t.topic;
+            return (
+              <div key={i} style={{
+                border: `1.5px solid ${isSelected ? cat.color : isOpen ? "#444" : "#2a2a2a"}`,
+                borderRadius: 10, overflow: "hidden",
+                background: isSelected ? cat.color + "12" : "#0d0d0d",
+                transition: "all 0.15s",
+              }}>
+                {/* Topic row */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", cursor: "pointer" }}
+                  onClick={() => setExpanded(isOpen ? null : i)}>
+                  {/* CTR score badge */}
+                  <div style={{
+                    flexShrink: 0, width: 32, height: 32, borderRadius: 6,
+                    background: t.ctrScore >= 85 ? "#1a2a1a" : t.ctrScore >= 70 ? "#2a2000" : "#1a1a2a",
+                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 900, color: t.ctrScore >= 85 ? "#4CAF50" : t.ctrScore >= 70 ? "#FF9800" : "#4FC3F7", lineHeight: 1 }}>{t.ctrScore}</div>
+                    <div style={{ fontSize: 7, color: "#444", lineHeight: 1 }}>CTR</div>
+                  </div>
+                  {/* Topic text */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: isSelected ? cat.color : "#ccc", fontWeight: isSelected ? 700 : 400, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {t.topic}
+                    </div>
+                    <div style={{ fontSize: 9, color: "#555", marginTop: 2 }}>{t.formula}</div>
+                  </div>
+                  <span style={{ color: "#444", fontSize: 10, flexShrink: 0 }}>{isOpen ? "▲" : "▼"}</span>
+                </div>
+
+                {/* Expanded viral details */}
+                {isOpen && (
+                  <div style={{ padding: "0 12px 12px", borderTop: "1px solid #1a1a1a" }}>
+                    {/* Viral title */}
+                    <div style={{ marginTop: 10, marginBottom: 8 }}>
+                      <div style={{ fontSize: 8, fontWeight: 900, color: "#4FC3F7", letterSpacing: 2, marginBottom: 4 }}>📝 VIRAL TITLE</div>
+                      <div style={{ fontSize: 13, color: "#fff", fontWeight: 700, lineHeight: 1.4, background: "#111", padding: "8px 10px", borderRadius: 6, borderLeft: "3px solid #4FC3F7" }}>
+                        {t.viralTitle}
+                      </div>
+                    </div>
+                    {/* Hook */}
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 8, fontWeight: 900, color: "#FFD54F", letterSpacing: 2, marginBottom: 4 }}>🎣 HOOK (first 3s)</div>
+                      <div style={{ fontSize: 12, color: "#ffe082", fontStyle: "italic", background: "#111", padding: "8px 10px", borderRadius: 6, borderLeft: "3px solid #FFD54F" }}>
+                        "{t.hook}"
+                      </div>
+                    </div>
+                    {/* Thumbnail caption */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 8, fontWeight: 900, color: "#FF5722", letterSpacing: 2, marginBottom: 4 }}>🖼 THUMBNAIL CAPTION</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: "#FFD54F", textTransform: "uppercase", letterSpacing: 2, textShadow: "1px 1px 0 #000", background: "#111", padding: "8px 10px", borderRadius: 6, borderLeft: "3px solid #FF5722" }}>
+                        {t.thumbnailCaption}
+                      </div>
+                    </div>
+                    {/* Use topic button */}
+                    <button onClick={() => { onSelect(t.topic); setExpanded(null); }} style={{
+                      width: "100%", padding: "9px", background: cat.color,
+                      color: "#111", border: "none", borderRadius: 7,
+                      fontSize: 11, fontWeight: 900, cursor: "pointer",
+                      fontFamily: "monospace", letterSpacing: 1,
+                    }}>
+                      ⚡ USE THIS TOPIC
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App() {
+  const initCat = randomCategory();
+  const [topic,      setTopic]      = useState("");
+  const [format,     setFormat]     = useState("shorts");
+  const [duration,   setDuration]   = useState(5);
+  const [category,   setCategory]   = useState(initCat);
+  const [loading,    setLoading]    = useState(false);
+  const [progress,   setProgress]   = useState("");
+  const [result,     setResult]     = useState(null);
+  const [saved,      setSaved]      = useState(loadSaved);
+  const [activeTab,  setActiveTab]  = useState("generate");
+  const [expandedId, setExpandedId] = useState(null);
+
+  const isShorts = format === "shorts";
+  const imgCount = isShorts ? SHORTS_IMAGES : duration * 35; // 35 images/min
+
+  // ── robust JSON extractor ────────────────────────────────────────────────
+  const parseJSON = (text) => {
+    // strip markdown fences
+    let s = text.replace(/```json[\s\S]*?```/g, m => m.slice(7,-3))
+                .replace(/```[\s\S]*?```/g, m => m.slice(3,-3))
+                .trim();
+    // find first { or [
+    const start = s.search(/[{[]/);
+    if (start > 0) s = s.slice(start);
+    // find matching closing bracket
+    let depth = 0, end = -1;
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] === '{' || s[i] === '[') depth++;
+      else if (s[i] === '}' || s[i] === ']') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (end !== -1) s = s.slice(0, end + 1);
+    return JSON.parse(s);
+  };
+
+  const callAPIRobust = async (messages, sys) => {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 8000, system: sys, messages }),
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    const d = await res.json();
+    if (d.error) throw new Error(d.error.message);
+    const text = d.content?.map(b => b.text || "").join("") || "";
+    return parseJSON(text);
+  };
+
+  const handleGenerate = async () => {
+    if (!topic.trim() || loading) return;
+    setLoading(true);
+    setResult(null);
+
+    const ratio  = isShorts ? "9:16 vertical" : "16:9 horizontal";
+    const cat    = CATEGORIES.find(c => c.id === category) || CATEGORIES[0];
+    const CHUNK  = 15; // max images per API call to avoid JSON errors
+
+    // Longform: 1000 words/min. Shorts: 1 short sentence per image.
+    // 35 images/min, 6 words/image, ~1.7s per image — cinematic fast pace
+    const wordsPerImage = 6;
+    const totalWords = imgCount * wordsPerImage;
+
+    const shortsRule = isShorts
+      ? `SHORTS RULE: 30 images x 1.7s = ~51s total. Each voiceover = EXACTLY 5-7 words. One punchy fragment. No full sentences needed. Example: "It hunts in complete darkness." or "Your brain does this every night."`
+      : `LONGFORM RULE: ${imgCount} images x 1.7s each. Each voiceover = EXACTLY 5-7 words MAX. Fast cinematic pace. Short punchy fragments only. NEVER more than 7 words per image. Total ~${totalWords} words across all images.`;
+
+    const imgStyle = `EXACT ART STYLE (Zenn stickman documentary):
+- Characters: round white circle head, small oval eyes + tiny pupils, small curved smile, thick black outline. Body = rounded beige/tan oval torso + thin black stick arms/legs. Expressive poses. Simple accessories as flat shapes.
+- BACKGROUNDS — match environment to scene location:
+  OUTDOORS: savannah = light blue sky + sandy beige ground. Forest = light blue + grass green. Desert = peach + warm sand. Beach = light blue + dark navy water. Night = dark navy + black. Snow = white + pale blue.
+  INDOORS (flat single color): home = warm beige wall + light wood floor. Hospital/clinic = white wall + light gray floor. Taxi interior = dark gray + brown seats. Street/city = pale gray sky + dark gray asphalt. School/office = off-white wall + beige floor. Restaurant = warm cream + brown floor. Station/subway = dark gray walls + concrete floor.
+  ABSTRACT/CONCEPT: plain WHITE background — clean and minimal for ideas/comparisons.
+- Environment objects in flat stickman style: house = colored rectangle + triangle roof. Hospital = white rectangle + bold red cross. Taxi = yellow rectangle + black wheels. Tree = green blob on brown stick. Road = gray band + white center dashes. All with thick black outlines.
+- Color palette: use FULL range — RED for danger/urgency, GREEN for health/nature/positive, YELLOW for taxi/sun, ORANGE for fire/energy, BLUE for water/cold, DARK NAVY for night. MAX 4 flat colors per scene.
+- NO TEXT unless purely abstract concept (one word or number only, nothing more).
+- Symbols (+/x/check/arrow/bolt/?) ONLY when voiceover explains comparison or cause-effect. Draw LARGE, BOLD, centered, strong accent color.
+- Composition: 2-3 elements max. Clean, readable, uncluttered.
+- For "If They Could Talk" topics: the main character (organ/animal/object) is drawn as a stickman-style personified character with a speech bubble. The speech bubble contains a short bold word or symbol representing what they are saying (e.g. "!" or "?" or a small icon). The character looks directly at viewer.
+- NO gradients. NO shading. NO photography. NO realism. NO textures.`;
+
+    const imgPromptTemplate = (ratio) =>
+      `Zenn stickman illustration: [choose correct background for scene — outdoors/indoors/abstract-white, specify colors]. [Characters action and pose, any simple accessories]. [1-2 flat environment objects: house/hospital/taxi/tree/road etc in stickman style]. Thick black outlines, flat fills, max 4 colors. No text unless abstract. Aspect: ${ratio}. Large bold colored symbol only if voiceover explains comparison or cause-effect.`;
+
+    const sys = `You are a top documentary producer (Zenn/Kurzgesagt style). ${imgStyle} ${shortsRule}
+${cat.id === "psycho_fr" ? "IMPORTANT: This is a FRENCH psychology channel. ALL voiceovers, narration, titles, descriptions, and tags must be in FRENCH. Tone: intimate, psychological, emotionally raw. Topics: relationships, love, family, loneliness, attachment." : ""}
+Respond with pure JSON only — no markdown, no backticks, no comments, no extra text. Use only double quotes in JSON. Never use apostrophes inside string values.`;
+
+    try {
+      // ── Phase 1: metadata + first chunk (with hook) ──────────────────────
+      const firstChunk = Math.min(CHUNK, imgCount);
+      setProgress(`Phase 1 — hook + images 1–${firstChunk} of ${imgCount}…`);
+
+      const p1 = await callAPIRobust([{ role: "user", content:
+`Topic: "${topic}"
+Category: ${cat.label}
+Format: ${isShorts ? `Shorts 9:16, ${imgCount} total images` : `Long-form 16:9, ${duration} min, ${imgCount} total images`}
+
+Generate: metadata + images 1 to ${firstChunk}.
+IMAGE 1 = HOOK: shocking/provocative voiceover that stops the scroll instantly.
+If this topic is part of a series (Part 1, Part 2...), make the ending leave viewers wanting Part 2.
+${cat.id === "if_they_talk" ? `SPECIAL RULE — "If They Could Talk" format: the voiceover is written in FIRST PERSON as if the animal/organ/object is speaking directly to the viewer. Scientific facts delivered as personal confessions. E.g. "I process 1.7 liters of blood every minute and you never even thank me." Tone: intimate, surprising, slightly dramatic.` : ""}
+${cat.id === "psycho_fr" ? `LANGUE FRANÇAISE OBLIGATOIRE: tout le contenu (voiceover, narration, titre, description, tags) doit être en français. Ton: intime, psychologique, révélateur. Public cible: francophones. Style: comme une thérapie qui dévoile des vérités cachées sur les relations, l amour, la famille, la solitude. Chaque voiceover frappe émotionnellement en 5-7 mots.` : ""}
+
+Return JSON exactly:
+{"thumbnailText":"ALL CAPS 3-5 word viral shock","hook":"image 1 voiceover","youtubeTitle":"SEO title","youtubeDescription":"180 word description with cliffhanger if series","tags":["t1","t2","t3","t4","t5","t6","t7","t8","t9","t10"],"coverCaption":"${isShorts ? "SHORT VIRAL CAPTION — ALL CAPS — max 5 words — extreme shock or curiosity" : "THUMBNAIL VIRAL CAPTION — ALL CAPS — max 7 words — urgency mystery or shock"}","coverImagePrompt":"${isShorts ? "Zenn stickman COVER 9:16 vertical: dramatic impactful scene for the topic. Main stickman in expressive shocked or curious pose. Matching environment background flat colors. Thick black outlines. The cover caption text displayed prominently at top in large bold font. High visual impact." : "Zenn stickman THUMBNAIL 16:9 horizontal: dramatic scene or split showing before/after or question. Main character in surprised or intense pose. Environment background. Caption text large bold at top. Thick black outlines, flat 4 colors max. High contrast. 16:9."}","images":[{"id":1,"isHook":true,"voiceover":"${isShorts ? "HOOK — 5-7 words MAX, instant shock" : "HOOK — 5-7 words MAX, instant shock"}","imagePrompt":"${imgPromptTemplate(ratio)}"}]}
+
+Produce exactly ${firstChunk} image objects (ids 1 to ${firstChunk}). Double quotes only. No apostrophes in strings.`
+      }], sys);
+
+      let allImages = [...(p1.images || [])];
+
+      // ── Middle chunks ─────────────────────────────────────────────────────
+      let chunkStart = firstChunk + 1;
+      let chunkIndex = 2;
+      while (chunkStart <= imgCount) {
+        const chunkEnd = Math.min(chunkStart + CHUNK - 1, imgCount);
+        const totalPhases = Math.ceil(imgCount / CHUNK) + 1;
+        setProgress(`Phase ${chunkIndex}/${totalPhases} — images ${chunkStart}–${chunkEnd} of ${imgCount}…`);
+
+        const chunk = await callAPIRobust([{ role: "user", content:
+`Topic: "${topic}" (${cat.label}) — continuing documentary.
+${cat.id === "if_they_talk" ? `FIRST PERSON VOICE: continue speaking as the animal/organ/object directly to the viewer. Scientific facts as personal confessions.` : ""}
+${cat.id === "psycho_fr" ? `FRANÇAIS OBLIGATOIRE: tous les voiceovers en français. Ton psychologique, intime, révélateur. 5-7 mots par image.` : ""}
+Generate images ${chunkStart} to ${chunkEnd} only.
+
+Return JSON exactly:
+{"images":[{"id":${chunkStart},"voiceover":"${isShorts ? "5-7 words MAX only" : "5-7 words MAX only"}","imagePrompt":"${imgPromptTemplate(ratio)}"}]}
+
+Produce exactly ${chunkEnd - chunkStart + 1} image objects (ids ${chunkStart} to ${chunkEnd}). Double quotes only. No apostrophes.`
+        }], sys);
+
+        allImages = [...allImages, ...(chunk.images || [])];
+        chunkStart = chunkEnd + 1;
+        chunkIndex++;
+      }
+
+      // ── Final phase: full narration only ─────────────────────────────────
+      setProgress(`Final phase — building narration…`);
+      // Build fullNarration locally — numbered per image
+      const fullNarration = allImages.map((img, i) =>
+        `[${String(i+1).padStart(2,"0")}] ${img.voiceover}`
+      ).join("\n");
+
+      const entry = {
+        id: Date.now(), topic, format,
+        duration: isShorts ? 1 : duration, category,
+        createdAt: new Date().toLocaleString(),
+        thumbnailText: p1.thumbnailText, hook: p1.hook,
+        youtubeTitle: p1.youtubeTitle, youtubeDescription: p1.youtubeDescription,
+        tags: p1.tags,
+        coverCaption: p1.coverCaption || p1.thumbnailText,
+        coverImagePrompt: p1.coverImagePrompt || "",
+        images: allImages,
+        fullNarration,
+      };
+
+      setResult(entry);
+      const updated = [entry, ...saved].slice(0, 60);
+      setSaved(updated); persistSaved(updated);
+    } catch (e) {
+      setResult({ error: `❌ ${e.message}` });
+    }
+    setLoading(false); setProgress("");
+  };
+
+  const deleteEntry = (id) => {
+    const u = saved.filter(s => s.id !== id);
+    setSaved(u); persistSaved(u);
+    if (expandedId === id) setExpandedId(null);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0d0d0d", fontFamily: "'Courier New', monospace", color: "#fff" }}>
+
+      {/* Header */}
+      <div style={{ background: "#080808", borderBottom: "2px solid #D2A679", padding: "13px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ width: 38, height: 38, background: "#D2A679", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 18, color: "#111" }}>Q</div>
+        <div>
+          <div style={{ color: "#D2A679", fontWeight: 900, fontSize: 15, letterSpacing: 3 }}>QUANTA DOCS</div>
+          <div style={{ color: "#444", fontSize: 9, letterSpacing: 2 }}>CURIOSITY-DRIVEN DOCUMENTARY GENERATOR</div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", background: "#080808", padding: "0 16px" }}>
+        {[["generate", "⚡ Generate"], ["viral", "🎯 Viral"], ["library", `📚 Library (${saved.length})`]].map(([id, label]) => (
+          <button key={id} onClick={() => setActiveTab(id)} style={{
+            padding: "11px 18px", border: "none", background: "transparent", cursor: "pointer",
+            color: activeTab === id ? "#D2A679" : "#444", fontWeight: 900, fontSize: 10,
+            letterSpacing: 2, fontFamily: "monospace",
+            borderBottom: activeTab === id ? "2px solid #D2A679" : "2px solid transparent",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      <div style={{ padding: 16, maxWidth: 760, margin: "0 auto" }}>
+
+        {activeTab === "viral" && <ViralAnalyzer />}
+
+        {activeTab === "generate" && (
+          <>
+            <div style={{ background: "#141414", border: "1px solid #2a2a2a", borderRadius: 14, padding: 18, marginBottom: 16 }}>
+
+              {/* Category picker */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: "#555", marginBottom: 8 }}>NICHE</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {CATEGORIES.map(cat => (
+                    <button key={cat.id}
+                      onClick={() => { setCategory(cat.id); setTopic(""); }}
+                      style={{
+                        padding: "5px 11px",
+                        border: `1.5px solid ${category === cat.id ? cat.color : "#2a2a2a"}`,
+                        borderRadius: 7,
+                        background: category === cat.id ? cat.color + "20" : "#0d0d0d",
+                        color: category === cat.id ? cat.color : "#555",
+                        fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "monospace",
+                      }}>
+                      {cat.emoji} {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* AI Topic Panel */}
+              <TopicPanel
+                category={category}
+                selectedTopic={topic}
+                onSelect={setTopic}
+              />
+
+              {/* Manual input */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: "#555", marginBottom: 6 }}>
+                  OR WRITE YOUR OWN TOPIC
+                </div>
+                <textarea
+                  value={topic}
+                  onChange={e => setTopic(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. What if fire was never discovered?"
+                  style={{
+                    width: "100%", background: "#0a0a0a", border: "1px solid #2a2a2a",
+                    borderRadius: 8, padding: "10px 12px", fontSize: 13,
+                    fontFamily: "monospace", color: "#fff", resize: "vertical",
+                    outline: "none", boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              {/* Format */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: "#555", marginBottom: 8 }}>FORMAT</div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  {[
+                    { id: "shorts",   label: "▲ Shorts",    sub: `${SHORTS_IMAGES} images · ~55s · 9:16`,        color: "#FF5722" },
+                    { id: "longform", label: "▶ Long-form", sub: `${duration} min · ${duration*35} imgs · 16:9`, color: "#1565C0" },
+                  ].map(f => (
+                    <button key={f.id} onClick={() => setFormat(f.id)} style={{
+                      flex: 1, padding: "11px 8px",
+                      border: `2px solid ${format === f.id ? f.color : "#2a2a2a"}`,
+                      borderRadius: 10, background: format === f.id ? f.color + "15" : "#0d0d0d",
+                      cursor: "pointer", fontFamily: "monospace",
+                    }}>
+                      <div style={{ fontWeight: 900, fontSize: 13, color: f.color }}>{f.label}</div>
+                      <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>{f.sub}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Duration */}
+              {format === "longform" && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: "#555", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
+                    <span>DURATION</span>
+                    <span style={{ color: "#1565C0" }}>{duration} min → {duration * 25} images</span>
+                  </div>
+                  <input type="range" min={2} max={12} step={1} value={duration} onChange={e => setDuration(Number(e.target.value))} style={{ width: "100%", accentColor: "#1565C0" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#444", marginTop: 3 }}>
+                    {[2,4,6,8,10,12].map(v => <span key={v}>{v}m</span>)}
+                  </div>
+                </div>
+              )}
+
+              {/* Summary */}
+              <div style={{ background: "#0a0a0a", border: "1px solid #222", borderRadius: 8, padding: "8px 12px", marginBottom: 14, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, color: "#555" }}>
+                <span>📦 <strong style={{ color: "#D2A679" }}>{imgCount}</strong> images</span>
+                <span>⏱ <strong style={{ color: isShorts ? "#FF5722" : "#D2A679" }}>{isShorts ? "~55s" : `${duration}min`}</strong></span>
+                <span>📐 <strong style={{ color: "#D2A679" }}>{isShorts ? "9:16" : "16:9"}</strong></span>
+                <span>🎨 <strong style={{ color: "#fff" }}>B&W Stickman</strong></span>
+                <span>🎣 <strong style={{ color: "#FFD54F" }}>Hook img 1</strong></span>
+              </div>
+
+              {/* Generate */}
+              <button onClick={handleGenerate} disabled={loading || !topic.trim()} style={{
+                width: "100%", padding: 14,
+                background: loading || !topic.trim() ? "#1a1a1a" : "linear-gradient(135deg,#D2A679,#FF9800)",
+                color: loading || !topic.trim() ? "#333" : "#111",
+                border: loading || !topic.trim() ? "1px solid #2a2a2a" : "none",
+                borderRadius: 10, fontSize: 13, fontWeight: 900, letterSpacing: 2,
+                cursor: loading || !topic.trim() ? "not-allowed" : "pointer", fontFamily: "monospace",
+              }}>
+                {loading ? `⏳ ${progress}` : `⚡ GENERATE — ${imgCount} IMAGES`}
+              </button>
+            </div>
+
+            {result && <ResultView data={result} />}
+          </>
+        )}
+
+        {/* Library */}
+        {activeTab === "library" && (
+          <div>
+            {saved.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 50, color: "#444" }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>📭</div>
+                <div>No documentaries saved yet.</div>
+              </div>
+            ) : saved.map(entry => {
+              const cat = CATEGORIES.find(c => c.id === entry.category) || CATEGORIES[0];
+              const isOpen = expandedId === entry.id;
+              return (
+                <div key={entry.id} style={{ background: "#141414", border: "1px solid #2a2a2a", borderRadius: 12, overflow: "hidden", marginBottom: 10 }}>
+                  <div onClick={() => setExpandedId(isOpen ? null : entry.id)} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, background: isOpen ? "#0f0f0f" : "#141414" }}>
+                    <div style={{ flexShrink: 0, width: 36, height: 36, background: cat.color + "30", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{cat.emoji}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 900, fontSize: 11, color: "#FFD54F", textTransform: "uppercase", letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.thumbnailText || entry.topic}</div>
+                      <div style={{ fontSize: 10, color: "#666", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{entry.youtubeTitle || entry.topic}</div>
+                      <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
+                        <span style={{ background: entry.format === "shorts" ? "#FF5722" : "#1565C0", color: "#fff", borderRadius: 3, padding: "1px 5px", fontSize: 8, fontWeight: 700 }}>{entry.format === "shorts" ? "SHORTS" : "LONG"}</span>
+                        <span style={{ background: "#1a1a1a", color: "#666", borderRadius: 3, padding: "1px 5px", fontSize: 8 }}>{entry.images?.length || 0} imgs</span>
+                        <span style={{ color: "#333", fontSize: 8 }}>{entry.createdAt}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+                      <button onClick={e => { e.stopPropagation(); deleteEntry(entry.id); }} style={{ background: "transparent", border: "1px solid #2a2a2a", color: "#444", cursor: "pointer", fontSize: 12, borderRadius: 5, padding: "2px 6px" }}>🗑</button>
+                      <span style={{ color: "#333", fontSize: 11 }}>{isOpen ? "▲" : "▼"}</span>
+                    </div>
+                  </div>
+                  {isOpen && (
+                    <div style={{ padding: "0 14px 14px", borderTop: "1px solid #1a1a1a" }}>
+                      <ResultView data={entry} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
